@@ -16,6 +16,10 @@
                 <div class="links">
                     <a href="https://github.com/JackGraver">GitHub</a>
                     <a href="https://linkedin.com/in/jack-graver/">LinkedIn</a>
+                    <button id="copy-email" class="btn-link">
+                        Email
+                        <span class="tooltip">Copy to clipboard</span>
+                    </button>
                 </div>
             </section>
             <section>
@@ -53,5 +57,22 @@
                 </div>
             </section>
         </main>
+        <script>
+            const email = "jackhgraver@gmail.com";
+            const btn = document.getElementById("copy-email");
+            const tooltip = btn.querySelector(".tooltip");
+
+            btn.addEventListener("click", () => {
+                navigator.clipboard.writeText(email).then(() => {
+                    tooltip.textContent = "Copied!";
+                    btn.classList.add("copied");
+
+                    setTimeout(() => {
+                        tooltip.textContent = "Copy to clipboard";
+                        btn.classList.remove("copied");
+                    }, 2000);
+                });
+            });
+        </script>
     </body>
 </html>
