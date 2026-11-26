@@ -234,7 +234,8 @@ weeks.forEach((w, i) => {
   }
   /* The art is cleared around this block (and thins out toward it) by the sphere script */
   .intro { position: relative; z-index: 1; }
-  #home { display: grid; place-items: center start; padding: 0 clamp(24px, 8vw, 140px); }
+  /* overflow-x: clip keeps the big sphere from spilling into the projects panel beside it */
+  #home { overflow-x: clip; display: grid; place-items: center start; padding: 0 clamp(24px, 8vw, 140px); }
   .hero-name { --s: clamp(3.5rem, 10vw, 8rem); position: relative; display: inline-block; margin-bottom: 2.4rem; }
   h1 { font-family: var(--serif); font-weight: 400; font-size: var(--s); line-height: 0.95; margin: 0; letter-spacing: -0.02em; }
   .tag { position: absolute; display: flex; align-items: center; gap: 5px; white-space: nowrap; font-size: 14px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute); }
