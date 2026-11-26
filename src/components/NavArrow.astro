@@ -1,0 +1,76 @@
+---
+// A big chevron button with a label. `next` points right and sits on the right
+// edge; `back` is its mirror image on the left edge. Both are vertically
+// centered, fade in when given the `ready` class, then bounce toward their
+// direction. The parent must be position: relative (or sticky).
+interface Props {
+  id: string;
+  direction: "next" | "back";
+  label: string;
+  ariaLabel: string;
+}
+const { id, direction, label, ariaLabel } = Astro.props;
+const forward = direction === "next";
+---
+
+<button class:list={["arrow", direction]} id={id} type="button" aria-label={ariaLabel}>
+  {forward && <span>{label}</span>}
+  <svg viewBox="0 0 32 64" width="26" height="52" aria-hidden="true">
+    <path
+      d={forward ? "M6 4l22 28L6 60" : "M26 4L4 32l22 28"}
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"></path>
+  </svg>
+  {!forward && <span>{label}</span>}
+</button>
+
+<style>
+  .arrow {
+    --dir: 1;
+    position: absolute;
+    top: 50%;
+    translate: 0 -50%;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 1rem 0.65rem;
+    font: inherit;
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink);
+    background: none;
+    border: 0;
+    outline: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .next { right: clamp(16px, 4vw, 56px); }
+  .back { --dir: -1; left: clamp(16px, 4vw, 56px); }
+
+  .arrow.ready {
+    pointer-events: auto;
+    animation: appear 0.6s ease forwards, nudge 1.6s ease-in-out 0.6s infinite;
+  }
+  .arrow:focus, .arrow:focus-visible { outline: none; }
+  svg { transition: transform 0.2s; }
+  .arrow:hover svg { transform: translateX(calc(var(--dir) * 3px)); }
+
+  @keyframes appear { to { opacity: 1; } }
+  @keyframes nudge { 50% { transform: translateX(calc(var(--dir) * 5px)); } }
+
+  @media (max-width: 720px) {
+    .arrow { top: auto; bottom: 28px; translate: 0 0; }
+    /* Back goes top-left on phones, Projects stays bottom-right */
+    .back { top: 4px; bottom: auto; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .arrow.ready { animation: appear 0.01s forwards; }
+  }
+</style>
