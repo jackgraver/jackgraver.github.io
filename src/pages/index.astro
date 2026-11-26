@@ -1,0 +1,668 @@
+---
+import "@fontsource/instrument-serif";
+import "@fontsource-variable/jetbrains-mono";
+import NavArrow from "../components/NavArrow.astro";
+import ThemeToggle from "../components/ThemeToggle.astro";
+import { projects } from "../data/projects";
+import { getContributions, toWeeks } from "../data/github";
+
+// ASCII-shaded sphere behind the name: Lambert shading from a fixed upper-left light, times a noise
+// pattern on the surface, mapped onto a glyph ramp. The client script animates it (the pattern rotates,
+// the light stays put); it reads this config from data-sphere, so the numbers live only here.
+const SPHERE = {
+  cols: 120, rows: 72, // a monospace cell is ~0.6 as wide as tall, so 120 x 72 is square
+  ramp: " .,:;-=+*#%@",
+  light: [-0.5, -0.55, 0.67].map((v, _, a) => v / Math.hypot(...a)),
+  freq: 3, // surface pattern scale: noise cells per sphere radius
+  contrast: 0.5, // pattern strength: dark patches dim the lit side by up to this fraction, and shift the
+             // shadow side by +-0.2x this, so it shows there too (0 = plain shaded sphere)
+};
+// Surface pattern: 2-octave value noise stretched to [-1,1]. Mirrored in the client script; keep the two in sync.
+const hash3 = (x: number, y: number, z: number) => {
+  let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(z, 1440662683);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+const vnoise = (x: number, y: number, z: number) => {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  const f = (t: number) => t * t * (3 - 2 * t);
+  const u = f(x - xi), v = f(y - yi), w = f(z - zi);
+  const l = (a: number, b: number, t: number) => a + (b - a) * t;
+  const c = (dx: number, dy: number, dz: number) => hash3(xi + dx, yi + dy, zi + dz);
+  return l(l(l(c(0, 0, 0), c(1, 0, 0), u), l(c(0, 1, 0), c(1, 1, 0), u), v),
+           l(l(c(0, 0, 1), c(1, 0, 1), u), l(c(0, 1, 1), c(1, 1, 1), u), v), w);
+};
+const pattern = (x: number, y: number, z: number) => {
+  const n = (2 * vnoise(x, y, z) + vnoise(2 * x + 17.3, 2 * y, 2 * z)) / 3; // mostly sits in 0.25..0.75
+  return Math.max(-1, Math.min(1, (n - 0.5) * 4));
+};
+// First paint (and the no-JS view): the t=0 frame, without the falloff around the text (that needs layout).
+const sphereArt = Array.from({ length: SPHERE.rows }, (_, r) =>
+  Array.from({ length: SPHERE.cols }, (_, c) => {
+    const { cols, rows, ramp, light, freq, contrast } = SPHERE;
+    const x = ((c + 0.5) / cols) * 2 - 1;
+    const y = ((r + 0.5) / rows) * 2 - 1;
+    const d2 = x * x + y * y;
+    if (d2 > 1) return " ";
+    const z = Math.sqrt(1 - d2);
+    const lambert = Math.max(0, x * light[0] + y * light[1] + z * light[2]);
+    const rim = Math.pow(1 - z, 3) * 0.12; // faint edge lift so the shadow side doesn't vanish
+    const base = 0.14 + 0.78 * lambert ** 1.2 + rim;
+    const p = pattern(x * freq, y * freq, z * freq);
+    const t = Math.min(1, base * (1 - contrast * (0.5 - 0.5 * p)) + contrast * 0.2 * p);
+    return ramp[Math.max(1, Math.round(t * (ramp.length - 1)))]; // never blank: gaps come only from the falloff
+  }).join(""),
+).join("\n");
+
+const gh = await getContributions();
+const weeks = gh ? toWeeks(gh.days) : [];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// Label a column when the month changes, skipping labels that would crowd each other.
+const monthLabels: { col: number; text: string }[] = [];
+weeks.forEach((w, i) => {
+  const first = w.find(Boolean);
+  if (!first) return;
+  const m = new Date(first.date + "T00:00:00Z").getUTCMonth();
+  const prev = monthLabels.at(-1);
+  if (!prev || (prev.text !== MONTHS[m] && i - prev.col >= 3)) monthLabels.push({ col: i, text: MONTHS[m] });
+});
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jack Graver</title>
+    <meta name="description" content="Jack Graver, software engineer from Canada." />
+    <!-- Apply the saved (or system) theme before first paint to avoid a flash -->
+    <script is:inline>
+      try {
+        const saved = localStorage.getItem("theme");
+        document.documentElement.dataset.theme =
+          saved === "light" || saved === "dark"
+            ? saved
+            : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      } catch {}
+      // Reload on the projects side: start there, with no slide animation, before first paint.
+      if (location.hash === "#projects") document.documentElement.classList.add("start-projects");
+    </script>
+  </head>
+  <body>
+    <div class="track" id="track">
+      <!-- Panel 1: landing -->
+      <section class="panel" id="home" aria-label="Intro">
+        <div class="intro">
+          <div class="hero-name">
+            <pre class="sphere" aria-hidden="true" data-sphere={JSON.stringify(SPHERE)}>{sphereArt}</pre>
+            <h1>Jack Graver</h1>
+            <span class="tag tag-ca"><span class="flag" aria-hidden="true">🇨🇦</span>Canada</span>
+            <span class="tag tag-se">Software engineer</span>
+          </div>
+          <p class="now">currently</p>
+          <p class="meta">
+            Engineer at{" "}<a
+              class="co"
+              href="https://www.datavisor.com/"
+              data-name="DataVisor"
+              data-stack="datavisor.com"
+              data-image="/previews/datavisor.jpg">DataVisor</a
+            >
+          </p>
+          <nav class="links">
+            <a href="https://github.com/JackGraver" data-gh>GitHub</a>
+            <a href="https://linkedin.com/in/jack-graver/">LinkedIn</a>
+            <button id="copy-email" type="button">
+              Email <span class="tip">Copy to clipboard</span>
+            </button>
+          </nav>
+        </div>
+        <ThemeToggle />
+        <NavArrow id="next" direction="next" label="Projects" ariaLabel="See projects" />
+      </section>
+
+      <!-- Panel 2: projects, scrolls vertically -->
+      <!-- id must not match the "#projects" URL hash, or the browser scrolls the page to it on load -->
+      <section class="panel scroll" id="projects-panel" aria-label="Projects" inert>
+        <!-- Viewport-tall sticky frame so the arrow stays vertically centered while the list scrolls -->
+        <div class="back-anchor">
+          <ThemeToggle />
+          <NavArrow id="back" direction="back" label="Go back" ariaLabel="Go back" />
+        </div>
+        <div class="list">
+          <p class="label">Projects</p>
+          <ul>
+            {projects.map((p, i) => (
+              <li>
+                <a
+                  class="row"
+                  href={p.href}
+                  data-i={i}
+                  data-name={p.name}
+                  data-short={p.short}
+                  data-stack={p.stack.join(" · ")}
+                  data-image={p.image ?? ""}
+                >
+                  <span class="idx">{String(i + 1).padStart(2, "0")}</span>
+                  <span class="name">{p.name}</span>
+                  <span class="short">{p.short}</span>
+                  <span class="go">{p.linkLabel} ↗</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+    </div>
+
+    <!-- GitHub activity card -->
+    {gh && (
+      <aside class="preview gh-card" id="gh-card" aria-hidden="true">
+        <div class="months" style={`--cols:${weeks.length}`}>
+          {monthLabels.map((m) => <span style={`grid-column:${m.col + 1}`}>{m.text}</span>)}
+        </div>
+        <div class="heat" style={`--cols:${weeks.length}`}>
+          {weeks.map((w) => w.map((d) => <i class={d ? `l${d.level}` : "blank"} title={d ? `${d.count} on ${d.date}` : undefined}></i>))}
+        </div>
+        <div class="cap">
+          <strong>{gh.total.toLocaleString("en-US")} contributions</strong>
+          <span class="legend">
+            less <i class="l0"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i> more
+          </span>
+        </div>
+      </aside>
+    )}
+
+    <!-- Floating hover preview -->
+    <aside class="preview" id="preview" aria-hidden="true">
+      <div class="shot" id="shot"></div>
+      <div class="cap">
+        <strong id="pv-name"></strong>
+        <span id="pv-stack"></span>
+      </div>
+    </aside>
+  </body>
+</html>
+
+<style is:global>
+  :root {
+    --bg: #f1ead8;
+    --ink: #231f1d; /* Mocha, the dark theme's background */
+    --mute: #80775f;
+    --line: #dcd3bb;
+    --accent: #b85c1e;
+    --card: #fffcf0;
+    --ph1: #e9e0c8;
+    --ph2: #e1d8be;
+    --shadow: rgba(40, 30, 10, 0.35);
+    --serif: "Instrument Serif", Georgia, serif;
+    --mono: "JetBrains Mono Variable", ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); font-family: var(--mono); font-size: 14px; }
+
+  /* Theme change: the new theme wipes in from left to right (View Transitions API) */
+  .theme-swipe::view-transition-old(root), .theme-swipe::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+  .theme-swipe::view-transition-new(root) { animation: theme-wipe 0.8s cubic-bezier(0.65, 0, 0.35, 1) both; }
+  /* The wipe edge is a line tilted 15deg from vertical (top leads the bottom).
+     26.795vh = 100vh * tan(15deg): how far the top of the edge sits ahead of the bottom. */
+  @keyframes theme-wipe {
+    from { clip-path: polygon(-100vw 0, 0 0, -26.795vh 100%, -100vw 100%); }
+    to   { clip-path: polygon(-100vw 0, calc(100vw + 26.795vh) 0, 100vw 100%, -100vw 100%); }
+  }
+  a { color: inherit; }
+
+  .track { display: flex; width: 200vw; height: 100dvh; transition: transform 0.9s cubic-bezier(0.77, 0, 0.18, 1); will-change: transform; }
+  .track.show-projects, .start-projects .track { transform: translateX(-100vw); }
+  .start-projects .track { transition: none; }
+  .panel { position: relative; width: 100vw; height: 100dvh; flex: none; }
+  .panel.scroll { overflow-y: auto; overscroll-behavior: contain; }
+
+  .label { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute); margin: 0 0 1.2rem; }
+
+  /* Landing */
+  /* Decorative ASCII sphere behind the name, tinted from --ink at low opacity so text stays legible on top.
+     Sized so 72 rows span --size (one cell is 1em tall); font-size is derived from it. */
+  .sphere {
+    --size: calc(var(--s) * 10.35);
+    position: absolute; z-index: -2; pointer-events: none; user-select: none;
+    left: calc(50% + 130px); top: calc(50% - 110px); translate: -50% -50%;
+    margin: 0; width: var(--size); aspect-ratio: 1;
+    font: 400 calc(var(--size) / 72) / 1 var(--mono);
+    letter-spacing: 0; white-space: pre; overflow: hidden;
+    color: color-mix(in srgb, var(--ink) var(--sphere-a, 28%), transparent); /* light theme needs more opacity than dark to read */
+  }
+  /* The art is cleared around this block (and thins out toward it) by the sphere script */
+  .intro { position: relative; z-index: 1; }
+  /* overflow-x: clip keeps the big sphere from spilling into the projects panel beside it */
+  #home { overflow-x: clip; display: grid; place-items: center start; padding: 0 clamp(24px, 8vw, 140px); }
+  .hero-name { --s: clamp(3.5rem, 10vw, 8rem); position: relative; display: inline-block; margin-bottom: 2.4rem; }
+  h1 { font-family: var(--serif); font-weight: 400; font-size: var(--s); line-height: 0.95; margin: 0; letter-spacing: -0.02em; }
+  .tag { position: absolute; display: flex; align-items: center; gap: 5px; white-space: nowrap; font-size: 14px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute); }
+  .tag-ca { left: calc(var(--s) * 0.2); top: calc(var(--s) * 0.88); }
+  .tag-se { left: calc(var(--s) * 2); top: calc(var(--s) * 0.125); }
+  .meta { margin: 0 0 0.4rem; color: var(--mute); }
+  .flag { font-size: 1.3em; line-height: 1; }
+  .now { font-family: var(--serif); font-style: italic; font-size: 1.15rem; color: var(--mute); margin: 0 0 0.15rem; }
+  .co { color: var(--ink); text-decoration: none; border-bottom: 1px dashed var(--mute); transition: color 0.2s, border-color 0.2s; }
+  .co:hover { color: var(--accent); border-color: var(--accent); }
+  .links { display: flex; gap: 1.4rem; margin-top: 2rem; }
+  .links a, .links button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: none; border-bottom: 1px solid var(--line); position: relative; transition: border-color 0.2s; }
+  .links a:hover, .links button:hover { border-color: var(--ink); }
+  .tip { position: absolute; left: 0; top: 140%; white-space: nowrap; font-size: 11px; background: var(--ink); color: var(--bg); padding: 3px 8px; border-radius: 4px; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+  .links button:hover .tip { opacity: 1; }
+
+  /* Keeps the back arrow pinned (and vertically centered) over the scrolling list */
+  .back-anchor { position: sticky; top: 0; height: 100dvh; margin-bottom: -100dvh; z-index: 2; pointer-events: none; }
+
+  /* Projects */
+  .list { max-width: 1000px; margin: 0 auto; padding: 8vh clamp(24px, 6vw, 80px) 14vh; }
+  ul { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+  .row { display: grid; grid-template-columns: 3ch 14rem 1fr auto; gap: 1.5rem; align-items: baseline; padding: 1.6rem 0; border-bottom: 1px solid var(--line); text-decoration: none; transition: padding-left 0.3s ease, color 0.2s; }
+  .row .idx { color: var(--mute); }
+  .row .name { font-family: var(--serif); font-size: clamp(1.6rem, 3vw, 2.4rem); line-height: 1; }
+  .row .short { color: var(--mute); }
+  .row .go { color: var(--mute); transition: color 0.2s; }
+  ul:hover .row:not(:hover) { color: var(--mute); }
+  .row:hover { padding-left: 14px; }
+  .row:hover .go { color: var(--accent); }
+
+  /* Hover preview */
+  .preview { position: fixed; left: 0; top: 0; width: 320px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 20px 50px -20px var(--shadow); overflow: hidden; pointer-events: none; opacity: 0; scale: 0.94; transition: opacity 0.18s, scale 0.18s; z-index: 10; }
+  .preview.on { opacity: 1; scale: 1; }
+  .shot { aspect-ratio: 16 / 10; background: var(--line) center / cover; position: relative; }
+  .shot.ph { display: grid; place-items: center; font-family: var(--serif); font-size: 2.2rem; color: var(--mute); background-image: repeating-linear-gradient(135deg, var(--ph1) 0 10px, var(--ph2) 10px 20px); }
+  /* GitHub activity card: pink ramp stepping around the base hsl(313 54.9% 64.3%) */
+  :root {
+    --l0: #e8dfc7;
+    --l1: hsl(313 55% 86%);
+    --l2: hsl(313 55% 75%);
+    --l3: hsl(313 54.9% 64.3%);
+    --l4: hsl(313 58% 48%);
+  }
+  /* Dark = Mocha. The heatmap ramp runs from a muted plum up to a bright pink. */
+  [data-theme="dark"] {
+    color-scheme: dark;
+    --sphere-a: 17%;
+    --bg: #231f1d; --ink: #f1ead8; --mute: #9a8e82; /* ink = Oat, the light theme's background */ --line: #3b342f; --accent: #d9825b;
+    --card: #2c2724; --ph1: #322c28; --ph2: #2b2623; --shadow: rgba(0, 0, 0, 0.6);
+    --l0: #302a26; --l1: hsl(313 28% 29%); --l2: hsl(313 40% 41%); --l3: hsl(313 54.9% 64.3%); --l4: hsl(313 75% 78%);
+  }
+
+  .gh-card { width: auto; padding-top: 14px; }
+  .months, .heat { display: grid; grid-template-columns: repeat(var(--cols), 9px); gap: 3px; padding: 0 14px; }
+  .months { height: 14px; margin-bottom: 4px; font-size: 10px; color: var(--mute); }
+  .months span { white-space: nowrap; }
+  .heat { grid-template-rows: repeat(7, 9px); grid-auto-flow: column; }
+  .heat i, .legend i { display: block; width: 9px; height: 9px; border-radius: 2px; background: var(--l0); }
+  .heat i.blank { background: none; }
+  .l0 { background: var(--l0) !important; }
+  .l1 { background: var(--l1) !important; }
+  .l2 { background: var(--l2) !important; }
+  .l3 { background: var(--l3) !important; }
+  .l4 { background: var(--l4) !important; }
+  .legend { display: flex; align-items: center; gap: 3px; }
+  .legend i { display: inline-block; }
+  .gh-card .cap { margin-top: 6px; align-items: center; }
+  .cap { padding: 10px 14px; display: flex; justify-content: space-between; gap: 1rem; font-size: 12px; }
+  .cap span { color: var(--mute); }
+
+  @media (max-width: 720px) {
+    .hero-name { --s: clamp(3.5rem, 20vw, 8rem); }
+    .tag { font-size: 9px; }
+    .row { grid-template-columns: 3ch 1fr; row-gap: 0.3rem; }
+    .row .short, .row .go { grid-column: 2; }
+    /* Back arrow: top-left on phones (the theme toggle is top-right); the list starts below it */
+    .list { padding-top: 96px; }
+  }
+  /* Touch: previews are tapped open, and a second tap on the link or card follows it */
+  @media (hover: none) {
+    .preview.armed { pointer-events: auto; transform-origin: 0 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .track { transition: none; }
+  }
+</style>
+
+<script>
+  const track = document.getElementById("track")!;
+  const next = document.getElementById("next")!;
+  const back = document.getElementById("back")!;
+  const home = document.getElementById("home")!;
+  const projectsPanel = document.getElementById("projects-panel")!;
+
+  setTimeout(() => next.classList.add("ready"), 1800);
+
+  function go(showProjects: boolean, focus = true) {
+    back.classList.toggle("ready", showProjects);
+    track.classList.toggle("show-projects", showProjects);
+    projectsPanel.toggleAttribute("inert", !showProjects);
+    home.toggleAttribute("inert", showProjects);
+    if (focus) (showProjects ? back : next).focus({ preventScroll: true });
+    history.replaceState(null, "", showProjects ? "#projects" : "#");
+  }
+  next.addEventListener("click", () => go(true));
+  back.addEventListener("click", () => go(false));
+  addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight") go(true);
+    if (e.key === "ArrowLeft" || e.key === "Escape") go(false);
+  });
+  if (location.hash === "#projects") {
+    // Reloaded on the projects side (the inline head script already positioned the track).
+    next.classList.add("ready");
+    go(true, false);
+    // Re-enable the slide transition once the jump has painted.
+    requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.remove("start-projects")));
+  }
+
+
+  // Light/dark toggle: every instance flips the same theme and stays in sync.
+  const toggles = document.querySelectorAll<HTMLButtonElement>("[data-theme-toggle]");
+  function syncToggles() {
+    const dark = document.documentElement.dataset.theme === "dark";
+    toggles.forEach((t) => {
+      t.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
+    });
+  }
+  function applyTheme(theme: string) {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem("theme", theme); } catch {}
+    syncToggles();
+  }
+  toggles.forEach((t) =>
+    t.addEventListener("click", () => {
+      const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+      const root = document.documentElement;
+      if (!document.startViewTransition || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        applyTheme(next);
+        return;
+      }
+      root.classList.add("theme-swipe");
+      document.startViewTransition(() => applyTheme(next)).finished.finally(() => root.classList.remove("theme-swipe"));
+    }),
+  );
+  syncToggles();
+
+  // Copy email
+  const email = "jackhgraver@gmail.com";
+  const btn = document.getElementById("copy-email")!;
+  const tip = btn.querySelector(".tip")!;
+  btn.addEventListener("click", () => {
+    navigator.clipboard.writeText(email).then(() => {
+      tip.textContent = "Copied!";
+      setTimeout(() => (tip.textContent = "Copy to clipboard"), 2000);
+    });
+  });
+
+  // Floating project preview that trails the cursor
+  const pv = document.getElementById("preview")!;
+  const shot = document.getElementById("shot")!;
+  const pvName = document.getElementById("pv-name")!;
+  const pvStack = document.getElementById("pv-stack")!;
+
+  // A card that eases toward the cursor, kept inside the viewport.
+  function follower(el: HTMLElement) {
+    let tx = 0, ty = 0, x = 0, y = 0, raf = 0;
+    const tick = () => {
+      x += (tx - x) * 0.18;
+      y += (ty - y) * 0.18;
+      el.style.transform = `translate(${x}px, ${y}px)`;
+      raf = el.classList.contains("on") || Math.abs(tx - x) > 0.5 ? requestAnimationFrame(tick) : 0;
+    };
+    const target = (e: MouseEvent) => {
+      tx = Math.max(12, Math.min(e.clientX + 28, innerWidth - el.offsetWidth - 12));
+      ty = Math.max(12, Math.min(e.clientY - 80, innerHeight - el.offsetHeight - 12));
+    };
+    return {
+      move(e: MouseEvent) { target(e); if (!raf) raf = requestAnimationFrame(tick); },
+      show(e: MouseEvent) {
+        if (!el.classList.contains("on")) { target(e); x = tx; y = ty; }
+        this.move(e);
+        el.classList.add("on");
+      },
+      hide() { el.classList.remove("on"); },
+    };
+  }
+  const projectCard = follower(pv);
+  const ghEl = document.getElementById("gh-card");
+  const ghCard = ghEl ? follower(ghEl) : null;
+  const ghLink = document.querySelector<HTMLElement>("[data-gh]");
+  const isTouch = () => matchMedia("(hover: none)").matches;
+  if (ghCard && ghLink) {
+    ghLink.addEventListener("mouseenter", (e) => !isTouch() && ghCard.show(e));
+    ghLink.addEventListener("mousemove", (e) => !isTouch() && ghCard.move(e));
+    ghLink.addEventListener("mouseleave", () => ghCard.hide());
+  }
+
+  // Preload preview images so the card is instant on first hover
+  document.querySelectorAll<HTMLElement>("[data-image]").forEach((el) => {
+    if (el.dataset.image) new Image().src = el.dataset.image;
+  });
+
+  function fillProject(row: HTMLElement) {
+    const d = row.dataset;
+    pvName.textContent = d.name!;
+    pvStack.textContent = d.stack ?? "";
+    if (d.image) {
+      shot.className = "shot";
+      shot.style.backgroundImage = `url(${d.image})`;
+      shot.textContent = "";
+    } else {
+      shot.className = "shot ph";
+      shot.style.backgroundImage = "";
+      shot.textContent = d.name!;
+    }
+  }
+  const rows = document.querySelectorAll<HTMLAnchorElement>("[data-name]");
+  rows.forEach((row) => {
+    row.addEventListener("mouseenter", (e) => {
+      if (isTouch()) return;
+      fillProject(row);
+      projectCard.show(e);
+    });
+    row.addEventListener("mousemove", (e) => !isTouch() && projectCard.move(e));
+    row.addEventListener("mouseleave", () => projectCard.hide());
+  });
+
+  // Touch: no hover, so the first tap on a link opens its card (next to the link, scaled to fit);
+  // a second tap on the link or on the card follows the link. Tapping anywhere else closes it.
+  let armed: { link: HTMLAnchorElement; el: HTMLElement } | null = null;
+  function disarm() {
+    if (!armed) return;
+    armed.el.classList.remove("on", "armed");
+    armed = null;
+  }
+  function arm(link: HTMLAnchorElement) {
+    const isGh = link.hasAttribute("data-gh");
+    const el = isGh ? ghEl : pv;
+    if (!el) return false;
+    if (!isGh) fillProject(link);
+    const scale = Math.min(1, (innerWidth - 24) / el.offsetWidth);
+    const w = el.offsetWidth * scale;
+    const h = el.offsetHeight * scale;
+    const r = link.getBoundingClientRect();
+    const x = Math.max(12, Math.min((innerWidth - w) / 2, innerWidth - w - 12));
+    const below = r.bottom + 12;
+    const y = below + h <= innerHeight - 12 ? below : Math.max(12, r.top - h - 12);
+    el.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+    el.classList.add("armed", "on");
+    armed = { link, el };
+    return true;
+  }
+  document.addEventListener(
+    "click",
+    (e) => {
+      if (!isTouch()) return;
+      const t = e.target as Element;
+      if (armed && armed.el.contains(t)) {
+        const href = armed.link.href;
+        disarm();
+        location.assign(href);
+        return;
+      }
+      const link = t.closest<HTMLAnchorElement>("[data-name], [data-gh]");
+      if (link && armed?.link === link) {
+        disarm(); // second tap: let the link navigate
+        return;
+      }
+      disarm();
+      if (link && arm(link)) e.preventDefault();
+    },
+    true,
+  );
+  projectsPanel.addEventListener("scroll", disarm, { passive: true });
+  track.addEventListener("transitionstart", (e) => e.target === track && disarm());
+
+  // ---------------------------------------------------------------------------------------------
+  // ASCII sphere: slow rotation + stipple falloff around the text block.
+  //
+  // The build renders the t=0 frame into the <pre> for first paint; this takes over from there.
+  // The light is fixed (upper left); only the noise pattern on the surface turns, so the sphere
+  // keeps its shading while visibly rotating. Around the .intro block the art is cleared, and over
+  // a band outside it each cell survives only if its fixed random value is below a density that
+  // rises from 0 at the block to 1 at the band's edge: the glyphs thin out like stipple.
+  // ---------------------------------------------------------------------------------------------
+  {
+    const PAD_X = 46, PAD_Y = 34; // blank margin around the name, px
+    const BELOW = 2.5; // the name's falloff runs this many times faster below it, so little art is cleared under its right end
+    const PAD_LO = 8; // blank margin around the links stack below it, px
+    const BAND = 115; // width of the thinning band outside that margin, px
+    const PERIOD = 75; // seconds per full turn
+    const FPS = 18;
+    // Rotation axis, mostly vertical and tipped a little: with the angle increasing, the front of
+    // the sphere moves left and slightly down (surface velocity = axis x point; at the front point
+    // (0,0,1) that is (axis.y, -axis.x) on screen, with y pointing down).
+    const AXIS = (([x, y, z]) => { const m = Math.hypot(x, y, z); return [x / m, y / m, z / m]; })([-0.22, -1, 0]);
+
+    // Same noise as the frontmatter, so the t=0 frame matches the server render.
+    const hash3 = (x: number, y: number, z: number) => {
+      let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(z, 1440662683);
+      h = Math.imul(h ^ (h >>> 13), 1274126177);
+      return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+    };
+    const vnoise = (x: number, y: number, z: number) => {
+      const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+      const f = (t: number) => t * t * (3 - 2 * t);
+      const u = f(x - xi), v = f(y - yi), w = f(z - zi);
+      const l = (a: number, b: number, t: number) => a + (b - a) * t;
+      const c = (dx: number, dy: number, dz: number) => hash3(xi + dx, yi + dy, zi + dz);
+      return l(l(l(c(0, 0, 0), c(1, 0, 0), u), l(c(0, 1, 0), c(1, 1, 0), u), v),
+               l(l(c(0, 0, 1), c(1, 0, 1), u), l(c(0, 1, 1), c(1, 1, 1), u), v), w);
+    };
+    const pattern = (x: number, y: number, z: number) => {
+      const n = (2 * vnoise(x, y, z) + vnoise(2 * x + 17.3, 2 * y, 2 * z)) / 3;
+      return Math.max(-1, Math.min(1, (n - 0.5) * 4));
+    };
+
+    const pre = document.querySelector<HTMLElement>(".sphere");
+    const intro = document.querySelector<HTMLElement>(".intro");
+    if (pre && intro) {
+      const { cols, rows, ramp, light, freq, contrast } = JSON.parse(pre.dataset.sphere!) as {
+        cols: number; rows: number; ramp: string; light: number[]; freq: number; contrast: number;
+      };
+      const N = cols * rows, top = ramp.length - 1;
+
+      // Static per-cell data: surface point, base shading (light is fixed), and a stable random value.
+      const cells: number[] = []; // indices of cells on the sphere
+      const px = new Float32Array(N), py = new Float32Array(N), pz = new Float32Array(N);
+      const base = new Float32Array(N), rnd = new Float32Array(N);
+      const density = new Float32Array(N); // falloff, recomputed on resize: 0 = blank, 1 = untouched
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const i = r * cols + c;
+          const x = ((c + 0.5) / cols) * 2 - 1, y = ((r + 0.5) / rows) * 2 - 1, d2 = x * x + y * y;
+          rnd[i] = hash3(c, r, 911);
+          if (d2 > 1) continue;
+          const z = Math.sqrt(1 - d2);
+          const lambert = Math.max(0, x * light[0] + y * light[1] + z * light[2]);
+          base[i] = 0.14 + 0.78 * lambert ** 1.2 + Math.pow(1 - z, 3) * 0.12;
+          px[i] = x; py[i] = y; pz[i] = z;
+          cells.push(i);
+        }
+      }
+
+      // Distance (px) from each cell's center to the padded text boxes -> density via smoothstep.
+      function measure() {
+        const s = pre!.getBoundingClientRect(), nb = intro!.querySelector(".hero-name")!.getBoundingClientRect();
+        if (!s.width) return;
+        // Two boxes instead of the whole .intro: the name, and the narrower stack below it (currently / company / links).
+        // That leaves the empty bottom-right of .intro uncleared, so the art hugs the text tighter there.
+        // These are block-level (full .intro width), so measure the text itself: a Range around the contents / the link children.
+        const rect = (el: Element) => { const g = document.createRange(); g.selectNodeContents(el); return g.getBoundingClientRect(); };
+        const lo = [rect(intro!.querySelector(".now")!), rect(intro!.querySelector(".meta")!), ...[...intro!.querySelectorAll(".links > *")].map((e) => e.getBoundingClientRect())];
+        const sb = { left: Math.min(...lo.map((r) => r.left)), right: Math.max(...lo.map((r) => r.right)), top: Math.min(...lo.map((r) => r.top)), bottom: Math.max(...lo.map((r) => r.bottom)) };
+        // The lower stack gets only a small margin (PAD_LO) so the art closes in around it.
+        const boxes = [[nb, PAD_X, PAD_Y, BELOW], [sb, PAD_LO, PAD_LO, 1]].map(([b, px, py, k]: any) => [b.left - s.left - px, b.right - s.left + px, b.top - s.top - py, b.bottom - s.top + py, k]);
+        const cw = s.width / cols, ch = s.height / rows;
+        for (const i of cells) {
+          const cx = ((i % cols) + 0.5) * cw, cy = (Math.floor(i / cols) + 0.5) * ch;
+          const d = Math.min(...boxes.map(([L, R, T, B, k]) => Math.hypot(Math.max(L - cx, 0, cx - R), Math.max(T - cy, 0, (cy - B) * k))));
+          const k = Math.min(1, d / BAND);
+          density[i] = k * k * (3 - 2 * k);
+        }
+      }
+
+      // One frame: rotate each surface point back by the angle (into object space), sample the pattern there.
+      const out = new Array<string>(N + rows - 1);
+      function draw(angle: number) {
+        // Rodrigues matrix for a rotation of -angle about AXIS.
+        const [ax, ay, az] = AXIS, co = Math.cos(-angle), si = Math.sin(-angle), oc = 1 - co;
+        const m00 = co + ax * ax * oc, m01 = ax * ay * oc - az * si, m02 = ax * az * oc + ay * si;
+        const m10 = ay * ax * oc + az * si, m11 = co + ay * ay * oc, m12 = ay * az * oc - ax * si;
+        const m20 = az * ax * oc - ay * si, m21 = az * ay * oc + ax * si, m22 = co + az * az * oc;
+        out.fill(" ");
+        for (let r = 1; r < rows; r++) out[r * (cols + 1) - 1] = "\n";
+        for (const i of cells) {
+          const dens = density[i];
+          if (rnd[i] >= dens) continue; // stipple: sparser toward the text, cleared inside the margin
+          const x = px[i], y = py[i], z = pz[i];
+          const p = pattern(
+            (m00 * x + m01 * y + m02 * z) * freq,
+            (m10 * x + m11 * y + m12 * z) * freq,
+            (m20 * x + m21 * y + m22 * z) * freq,
+          );
+          // Glyphs also step down the ramp a little where they're sparse.
+          const t = Math.min(1, base[i] * (1 - contrast * (0.5 - 0.5 * p)) + contrast * 0.2 * p) * (0.6 + 0.4 * dens);
+          out[i + Math.floor(i / cols)] = ramp[Math.max(1, Math.round(t * top))]; // never blank on the sphere
+        }
+        pre!.textContent = out.join("");
+      }
+
+      // Loop: ~FPS redraws, only while the landing panel is on screen and the tab is visible.
+      const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+      let angle = 0, raf = 0, prev = 0, lastDraw = 0, onScreen = !home.inert;
+      const tick = (now: number) => {
+        raf = requestAnimationFrame(tick);
+        angle += (Math.min(now - prev, 100) / 1000 / PERIOD) * 2 * Math.PI; // clamp long gaps
+        prev = now;
+        if (now - lastDraw < 1000 / FPS - 2) return;
+        lastDraw = now;
+        draw(angle);
+      };
+      function update() {
+        const run = onScreen && !document.hidden && !reduced.matches;
+        if (run && !raf) {
+          prev = lastDraw = performance.now();
+          raf = requestAnimationFrame(tick);
+        } else if (!run && raf) {
+          cancelAnimationFrame(raf);
+          raf = 0;
+        }
+      }
+      // Re-measure when the layout changes (viewport, fonts swapping in), redrawing in case we're paused.
+      const relayout = () => { measure(); draw(angle); };
+      relayout();
+      const ro = new ResizeObserver(relayout);
+      ro.observe(intro);
+      ro.observe(pre);
+      document.fonts?.ready.then(relayout);
+      // go() marks the landing panel inert while the projects panel is shown. (Not an IntersectionObserver:
+      // slid off, the panel sits exactly at the viewport edge, which still counts as intersecting.)
+      new MutationObserver(() => { onScreen = !home.inert; update(); })
+        .observe(home, { attributes: true, attributeFilter: ["inert"] });
+      document.addEventListener("visibilitychange", update);
+      reduced.addEventListener("change", update);
+      update();
+    }
+  }
+</script>
