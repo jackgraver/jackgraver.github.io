@@ -4,7 +4,33 @@ import "@fontsource-variable/jetbrains-mono";
 import NavArrow from "../components/NavArrow.astro";
 import ThemeToggle from "../components/ThemeToggle.astro";
 import { projects } from "../data/projects";
-import { getContributions, toWeeks } from "../data/github";
+import GithubCard from "../components/GithubCard.astro";
+import ProjectPreview from "../components/ProjectPreview.astro";
+
+// Role block under the company line (decoded in on click). Dates: intern from May 2025, full-time from Jan 2026.
+// The stack sketch is plain text: keep the ┬ and └ in the same column.
+const sp = (n: number) => " ".repeat(n);
+const ROLE = [
+  { text: "Full Stack Developer" },
+  { text: "May 2025  intern", dim: true },
+  { text: "Jan 2026  full-time · now", dim: true },
+  { text: "" },
+  // Simplified from the real system (internal service names left out). Columns line up by construction:
+  // the centre of "Spring Boot API" is column 27, the two branches hang from columns 21 and 33.
+  ...[
+    "Angular → Node.js → Spring Boot API ─→ MySQL",
+    sp(27) + "│ REST",
+    sp(27) + "↓",
+    sp(19) + "Feature Platform",
+    sp(21) + "┌─────┴─────┐",
+    sp(14) + "events │" + sp(11) + "│ batch",
+    sp(21) + "↓" + sp(11) + "↓",
+    sp(19) + "Kafka" + sp(7) + "Flink",
+    sp(21) + "│" + sp(11) + "│",
+    sp(21) + "↓" + sp(11) + "↓",
+    sp(16) + "ClickHouse " + "YugabyteDB · S3",
+  ].map((text) => ({ text })),
+];
 
 // ASCII-shaded sphere behind the name: Lambert shading from a fixed upper-left light, times a noise
 // pattern on the surface, mapped onto a glyph ramp. The client script animates it (the pattern rotates,
@@ -54,18 +80,6 @@ const sphereArt = Array.from({ length: SPHERE.rows }, (_, r) =>
   }).join(""),
 ).join("\n");
 
-const gh = await getContributions();
-const weeks = gh ? toWeeks(gh.days) : [];
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-// Label a column when the month changes, skipping labels that would crowd each other.
-const monthLabels: { col: number; text: string }[] = [];
-weeks.forEach((w, i) => {
-  const first = w.find(Boolean);
-  if (!first) return;
-  const m = new Date(first.date + "T00:00:00Z").getUTCMonth();
-  const prev = monthLabels.at(-1);
-  if (!prev || (prev.text !== MONTHS[m] && i - prev.col >= 3)) monthLabels.push({ col: i, text: MONTHS[m] });
-});
 ---
 
 <!doctype html>
@@ -75,6 +89,9 @@ weeks.forEach((w, i) => {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Jack Graver</title>
     <meta name="description" content="Jack Graver, software engineer from Canada." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <!-- Apply the saved (or system) theme before first paint to avoid a flash -->
     <script is:inline>
       try {
@@ -100,18 +117,24 @@ weeks.forEach((w, i) => {
             <span class="tag tag-se">Software engineer</span>
           </div>
           <p class="now">currently</p>
-          <p class="meta">
-            Engineer at{" "}<a
-              class="co"
-              href="https://www.datavisor.com/"
-              data-name="DataVisor"
-              data-stack="datavisor.com"
-              data-image="/previews/datavisor.jpg">DataVisor</a
-            >
-          </p>
+          <div class="meta-wrap">
+            <p class="meta">
+              Engineer at{" "}<a
+                class="co ext"
+                href="https://www.datavisor.com/"
+                data-name="DataVisor"
+                data-stack="datavisor.com"
+                data-image="/previews/datavisor.jpg"
+                ><span class="t">DataVisor</span><span class="arr" aria-hidden="true">↗</span></a
+              ><button class="role-toggle" id="role-toggle" type="button" aria-expanded="false" aria-controls="role">since 2025</button>
+            </p>
+            <!-- Floats to the right of the line (over the page, no layout change); opens from "since 2025", lines decode in (src/scripts/role.ts) -->
+            <div class="role" id="role" data-lines={JSON.stringify(ROLE)}><div class="role-out" id="role-out"></div></div>
+          </div>
           <nav class="links">
             <a href="https://github.com/JackGraver" data-gh>GitHub</a>
-            <a href="https://linkedin.com/in/jack-graver/">LinkedIn</a>
+            <a class="ext" href="https://linkedin.com/in/jack-graver/"><span class="t">LinkedIn</span><span class="arr" aria-hidden="true">↗</span></a>
+            <a class="ext" href="/resume.pdf" target="_blank" rel="noopener"><span class="t">Resume</span><span class="arr" aria-hidden="true">↗</span></a>
             <button id="copy-email" type="button">
               Email <span class="tip">Copy to clipboard</span>
             </button>
@@ -155,32 +178,9 @@ weeks.forEach((w, i) => {
       </section>
     </div>
 
-    <!-- GitHub activity card -->
-    {gh && (
-      <aside class="preview gh-card" id="gh-card" aria-hidden="true">
-        <div class="months" style={`--cols:${weeks.length}`}>
-          {monthLabels.map((m) => <span style={`grid-column:${m.col + 1}`}>{m.text}</span>)}
-        </div>
-        <div class="heat" style={`--cols:${weeks.length}`}>
-          {weeks.map((w) => w.map((d) => <i class={d ? `l${d.level}` : "blank"} title={d ? `${d.count} on ${d.date}` : undefined}></i>))}
-        </div>
-        <div class="cap">
-          <strong>{gh.total.toLocaleString("en-US")} contributions</strong>
-          <span class="legend">
-            less <i class="l0"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i> more
-          </span>
-        </div>
-      </aside>
-    )}
-
-    <!-- Floating hover preview -->
-    <aside class="preview" id="preview" aria-hidden="true">
-      <div class="shot" id="shot"></div>
-      <div class="cap">
-        <strong id="pv-name"></strong>
-        <span id="pv-stack"></span>
-      </div>
-    </aside>
+    <!-- Hover cards (see src/scripts/hover-cards.ts) -->
+    <GithubCard />
+    <ProjectPreview />
   </body>
 </html>
 
@@ -244,11 +244,41 @@ weeks.forEach((w, i) => {
   .meta { margin: 0 0 0.4rem; color: var(--mute); }
   .flag { font-size: 1.3em; line-height: 1; }
   .now { font-family: var(--serif); font-style: italic; font-size: 1.15rem; color: var(--mute); margin: 0 0 0.15rem; }
-  .co { color: var(--ink); text-decoration: none; border-bottom: 1px dashed var(--mute); transition: color 0.2s, border-color 0.2s; }
-  .co:hover { color: var(--accent); border-color: var(--accent); }
+  .co { color: var(--ink); text-decoration: none; transition: color 0.2s; }
+  .co:hover { color: var(--accent); }
+  /* Hover hit area of the text triggers: just the text until their card opens (.hot), then it grows
+     by --hit so the pointer can drift off the text without closing the card */
+  .co { position: relative; --hit: 0px; }
+  .links a[data-gh] { --hit: 0px; }
+  .co::after, .links a[data-gh]::after { content: ""; position: absolute; inset: calc(var(--hit) * -1); }
+  .co.hot, .links a[data-gh].hot { --hit: 6px; }
+  .co.ext .t { border-bottom: 1px dashed var(--mute); transition: border-color 0.2s; }
+  .co.ext:hover .t { border-color: var(--accent); }
+  /* Role block under the company line: opens from the "since 2025" button, lines decode in */
+  .role-toggle { font: inherit; color: var(--mute); background: none; border: 0; padding: 0; margin-left: 0.7em; cursor: pointer; opacity: 0.75; transition: color 0.2s, opacity 0.2s; }
+  .role-toggle::after { content: "›"; display: inline-block; margin-left: 0.35em; transition: transform 0.25s ease; }
+  .role-toggle[aria-expanded="true"]::after { transform: rotate(90deg); }
+  .role-toggle:hover, .role-toggle:focus-visible { color: var(--ink); opacity: 1; outline: none; }
+  /* A small panel beside the company line. Absolutely positioned, so opening it never moves the page,
+     and its rows are all laid out up front (see decode.ts `reserve`) so nothing shifts while it types. */
+  .meta-wrap { position: relative; width: fit-content; } /* as wide as the line itself, so the panel sits right beside "since 2025" */
+  .role { position: absolute; left: calc(100% + 18px); top: 0; z-index: 3; padding: 12px 16px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 16px 40px -24px var(--shadow); opacity: 0; pointer-events: none; translate: -8px 0; transition: opacity 0.2s ease, translate 0.25s ease; }
+  .role.open { opacity: 1; pointer-events: auto; translate: 0 0; }
+  .role-out { font-size: 12px; line-height: 1.55; white-space: pre; color: var(--ink); }
+  .role-out div { min-height: 1lh; }
+  .role-out .dim { color: var(--mute); }
+  .role-out .g { color: var(--accent); opacity: 0.75; }
   .links { display: flex; gap: 1.4rem; margin-top: 2rem; }
   .links a, .links button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: none; border-bottom: 1px solid var(--line); position: relative; transition: border-color 0.2s; }
   .links a:hover, .links button:hover { border-color: var(--ink); }
+  /* Links to another page: an arrow slides in on hover and nudges the links after it to the right */
+  a.ext { display: inline-flex; align-items: baseline; border-bottom: 0; }
+  .links .ext .t { border-bottom: 1px solid var(--line); transition: border-color 0.2s; }
+  .ext .arr { display: inline-block; max-width: 0; margin-left: 0; opacity: 0; overflow: hidden; transform: translate(-4px, 2px); transition: max-width 0.28s ease, margin-left 0.28s ease, opacity 0.2s ease, transform 0.28s ease; }
+  @media (hover: hover) {
+    .links .ext:hover .t { border-color: var(--ink); }
+    .ext:hover .arr, .ext:focus-visible .arr { max-width: 1.2em; margin-left: 0.35em; opacity: 1; transform: none; }
+  }
   .tip { position: absolute; left: 0; top: 140%; white-space: nowrap; font-size: 11px; background: var(--ink); color: var(--bg); padding: 3px 8px; border-radius: 4px; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
   .links button:hover .tip { opacity: 1; }
 
@@ -267,57 +297,27 @@ weeks.forEach((w, i) => {
   .row:hover { padding-left: 14px; }
   .row:hover .go { color: var(--accent); }
 
-  /* Hover preview */
-  .preview { position: fixed; left: 0; top: 0; width: 320px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 20px 50px -20px var(--shadow); overflow: hidden; pointer-events: none; opacity: 0; scale: 0.94; transition: opacity 0.18s, scale 0.18s; z-index: 10; }
-  .preview.on { opacity: 1; scale: 1; }
-  .shot { aspect-ratio: 16 / 10; background: var(--line) center / cover; position: relative; }
-  .shot.ph { display: grid; place-items: center; font-family: var(--serif); font-size: 2.2rem; color: var(--mute); background-image: repeating-linear-gradient(135deg, var(--ph1) 0 10px, var(--ph2) 10px 20px); }
-  /* GitHub activity card: pink ramp stepping around the base hsl(313 54.9% 64.3%) */
-  :root {
-    --l0: #e8dfc7;
-    --l1: hsl(313 55% 86%);
-    --l2: hsl(313 55% 75%);
-    --l3: hsl(313 54.9% 64.3%);
-    --l4: hsl(313 58% 48%);
-  }
-  /* Dark = Mocha. The heatmap ramp runs from a muted plum up to a bright pink. */
+  /* Dark = Mocha */
   [data-theme="dark"] {
     color-scheme: dark;
     --sphere-a: 17%;
     --bg: #231f1d; --ink: #f1ead8; --mute: #9a8e82; /* ink = Oat, the light theme's background */ --line: #3b342f; --accent: #d9825b;
     --card: #2c2724; --ph1: #322c28; --ph2: #2b2623; --shadow: rgba(0, 0, 0, 0.6);
-    --l0: #302a26; --l1: hsl(313 28% 29%); --l2: hsl(313 40% 41%); --l3: hsl(313 54.9% 64.3%); --l4: hsl(313 75% 78%);
   }
-
-  .gh-card { width: auto; padding-top: 14px; }
-  .months, .heat { display: grid; grid-template-columns: repeat(var(--cols), 9px); gap: 3px; padding: 0 14px; }
-  .months { height: 14px; margin-bottom: 4px; font-size: 10px; color: var(--mute); }
-  .months span { white-space: nowrap; }
-  .heat { grid-template-rows: repeat(7, 9px); grid-auto-flow: column; }
-  .heat i, .legend i { display: block; width: 9px; height: 9px; border-radius: 2px; background: var(--l0); }
-  .heat i.blank { background: none; }
-  .l0 { background: var(--l0) !important; }
-  .l1 { background: var(--l1) !important; }
-  .l2 { background: var(--l2) !important; }
-  .l3 { background: var(--l3) !important; }
-  .l4 { background: var(--l4) !important; }
-  .legend { display: flex; align-items: center; gap: 3px; }
-  .legend i { display: inline-block; }
-  .gh-card .cap { margin-top: 6px; align-items: center; }
-  .cap { padding: 10px 14px; display: flex; justify-content: space-between; gap: 1rem; font-size: 12px; }
-  .cap span { color: var(--mute); }
 
   @media (max-width: 720px) {
     .hero-name { --s: clamp(3.5rem, 20vw, 8rem); }
+    .role-out { font-size: 10.5px; line-height: 1.4; }
     .tag { font-size: 9px; }
     .row { grid-template-columns: 3ch 1fr; row-gap: 0.3rem; }
     .row .short, .row .go { grid-column: 2; }
     /* Back arrow: top-left on phones (the theme toggle is top-right); the list starts below it */
     .list { padding-top: 96px; }
   }
-  /* Touch: previews are tapped open, and a second tap on the link or card follows it */
-  @media (hover: none) {
-    .preview.armed { pointer-events: auto; transform-origin: 0 0; }
+  /* Not enough room to the right of the company line: the role panel drops below it, over the links */
+  @media (max-width: 900px) {
+    .role { left: 0; top: calc(100% + 8px); translate: 0 -6px; }
+    .role.open { translate: 0 0; }
   }
   @media (prefers-reduced-motion: reduce) {
     .track { transition: none; }
@@ -394,124 +394,9 @@ weeks.forEach((w, i) => {
     });
   });
 
-  // Floating project preview that trails the cursor
-  const pv = document.getElementById("preview")!;
-  const shot = document.getElementById("shot")!;
-  const pvName = document.getElementById("pv-name")!;
-  const pvStack = document.getElementById("pv-stack")!;
-
-  // A card that eases toward the cursor, kept inside the viewport.
-  function follower(el: HTMLElement) {
-    let tx = 0, ty = 0, x = 0, y = 0, raf = 0;
-    const tick = () => {
-      x += (tx - x) * 0.18;
-      y += (ty - y) * 0.18;
-      el.style.transform = `translate(${x}px, ${y}px)`;
-      raf = el.classList.contains("on") || Math.abs(tx - x) > 0.5 ? requestAnimationFrame(tick) : 0;
-    };
-    const target = (e: MouseEvent) => {
-      tx = Math.max(12, Math.min(e.clientX + 28, innerWidth - el.offsetWidth - 12));
-      ty = Math.max(12, Math.min(e.clientY - 80, innerHeight - el.offsetHeight - 12));
-    };
-    return {
-      move(e: MouseEvent) { target(e); if (!raf) raf = requestAnimationFrame(tick); },
-      show(e: MouseEvent) {
-        if (!el.classList.contains("on")) { target(e); x = tx; y = ty; }
-        this.move(e);
-        el.classList.add("on");
-      },
-      hide() { el.classList.remove("on"); },
-    };
-  }
-  const projectCard = follower(pv);
-  const ghEl = document.getElementById("gh-card");
-  const ghCard = ghEl ? follower(ghEl) : null;
-  const ghLink = document.querySelector<HTMLElement>("[data-gh]");
-  const isTouch = () => matchMedia("(hover: none)").matches;
-  if (ghCard && ghLink) {
-    ghLink.addEventListener("mouseenter", (e) => !isTouch() && ghCard.show(e));
-    ghLink.addEventListener("mousemove", (e) => !isTouch() && ghCard.move(e));
-    ghLink.addEventListener("mouseleave", () => ghCard.hide());
-  }
-
-  // Preload preview images so the card is instant on first hover
-  document.querySelectorAll<HTMLElement>("[data-image]").forEach((el) => {
-    if (el.dataset.image) new Image().src = el.dataset.image;
-  });
-
-  function fillProject(row: HTMLElement) {
-    const d = row.dataset;
-    pvName.textContent = d.name!;
-    pvStack.textContent = d.stack ?? "";
-    if (d.image) {
-      shot.className = "shot";
-      shot.style.backgroundImage = `url(${d.image})`;
-      shot.textContent = "";
-    } else {
-      shot.className = "shot ph";
-      shot.style.backgroundImage = "";
-      shot.textContent = d.name!;
-    }
-  }
-  const rows = document.querySelectorAll<HTMLAnchorElement>("[data-name]");
-  rows.forEach((row) => {
-    row.addEventListener("mouseenter", (e) => {
-      if (isTouch()) return;
-      fillProject(row);
-      projectCard.show(e);
-    });
-    row.addEventListener("mousemove", (e) => !isTouch() && projectCard.move(e));
-    row.addEventListener("mouseleave", () => projectCard.hide());
-  });
-
-  // Touch: no hover, so the first tap on a link opens its card (next to the link, scaled to fit);
-  // a second tap on the link or on the card follows the link. Tapping anywhere else closes it.
-  let armed: { link: HTMLAnchorElement; el: HTMLElement } | null = null;
-  function disarm() {
-    if (!armed) return;
-    armed.el.classList.remove("on", "armed");
-    armed = null;
-  }
-  function arm(link: HTMLAnchorElement) {
-    const isGh = link.hasAttribute("data-gh");
-    const el = isGh ? ghEl : pv;
-    if (!el) return false;
-    if (!isGh) fillProject(link);
-    const scale = Math.min(1, (innerWidth - 24) / el.offsetWidth);
-    const w = el.offsetWidth * scale;
-    const h = el.offsetHeight * scale;
-    const r = link.getBoundingClientRect();
-    const x = Math.max(12, Math.min((innerWidth - w) / 2, innerWidth - w - 12));
-    const below = r.bottom + 12;
-    const y = below + h <= innerHeight - 12 ? below : Math.max(12, r.top - h - 12);
-    el.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
-    el.classList.add("armed", "on");
-    armed = { link, el };
-    return true;
-  }
-  document.addEventListener(
-    "click",
-    (e) => {
-      if (!isTouch()) return;
-      const t = e.target as Element;
-      if (armed && armed.el.contains(t)) {
-        const href = armed.link.href;
-        disarm();
-        location.assign(href);
-        return;
-      }
-      const link = t.closest<HTMLAnchorElement>("[data-name], [data-gh]");
-      if (link && armed?.link === link) {
-        disarm(); // second tap: let the link navigate
-        return;
-      }
-      disarm();
-      if (link && arm(link)) e.preventDefault();
-    },
-    true,
-  );
-  projectsPanel.addEventListener("scroll", disarm, { passive: true });
-  track.addEventListener("transitionstart", (e) => e.target === track && disarm());
+  // Hover cards (project preview and GitHub card), including their touch behaviour
+  import "../scripts/hover-cards";
+  import "../scripts/role";
 
   // ---------------------------------------------------------------------------------------------
   // ASCII sphere: slow rotation + stipple falloff around the text block.

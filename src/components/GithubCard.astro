@@ -1,0 +1,134 @@
+---
+// GitHub activity hover card: contribution heatmap, a caption that reads out the hovered day, and
+// a language breakdown that turns into the projects worked on when a day is hovered, and a profile
+// link. Rendered once; src/scripts/hover-cards.ts shows it next to the [data-gh] link and wires the
+// interactions (day readout, decoding project list, click-through).
+import { getContributions, getActivity, toWeeks } from "../data/github";
+
+const GH = "https://github.com/JackGraver";
+const gh = await getContributions();
+const activity = await getActivity();
+const langs = activity?.langs ?? [];
+// Muted colours for the language bar (anything unlisted falls back to the muted ink)
+const LANG_COLOR: Record<string, string> = {
+  TypeScript: "#5b8bb5", JavaScript: "#d3b45a", Python: "#6a9a6a", Go: "#5fb3b3", Rust: "#c0855f",
+  Java: "#b07a6b", "C++": "#a87aa8", C: "#8a8f98", "C#": "#7a8fc0", HTML: "#d9825b", CSS: "#8f7ac0",
+  Shell: "#8fb86b", Swift: "#e0905a", Kotlin: "#a88fd0", Dart: "#5aa8c8", Other: "#9a8e82",
+};
+const weeks = gh ? toWeeks(gh.days) : [];
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// Label a column when the month changes, skipping labels that would crowd each other.
+const monthLabels: { col: number; text: string }[] = [];
+weeks.forEach((w, i) => {
+  const first = w.find(Boolean);
+  if (!first) return;
+  const m = new Date(first.date + "T00:00:00Z").getUTCMonth();
+  const prev = monthLabels.at(-1);
+  if (!prev || (prev.text !== MONTHS[m] && i - prev.col >= 3)) monthLabels.push({ col: i, text: MONTHS[m] });
+});
+
+const fmt = (iso: string, o: Intl.DateTimeFormatOptions) => new Date(iso + "T00:00:00Z").toLocaleDateString("en-US", { ...o, timeZone: "UTC" });
+const long = (iso: string) => fmt(iso, { weekday: "short", month: "short", day: "numeric" });
+const noun = (n: number) => (n === 1 ? "contribution" : "contributions");
+const cellText = (d: { count: number; date: string }) => `${d.count ? `${d.count} ${noun(d.count)}` : "No contributions"} · ${long(d.date)}`;
+const totalText = gh ? `${gh.total.toLocaleString("en-US")} contributions` : "";
+---
+
+{gh && (
+  <aside class="preview gh-card" id="gh-card" aria-hidden="true">
+    <div class="months" style={`--cols:${weeks.length}`}>
+      {monthLabels.map((m) => <span style={`grid-column:${m.col + 1}`}>{m.text}</span>)}
+    </div>
+    <div class="heat" style={`--cols:${weeks.length}`}>
+      {weeks.map((w) => w.map((d) => d
+        ? <i class:list={[`l${d.level}`]} data-d={d.date} data-n={d.count} data-t={cellText(d)}></i>
+        : <i class="blank"></i>))}
+    </div>
+    <div class="cap">
+      <strong id="gh-read" data-default={totalText}>{totalText}</strong>
+      <span class="legend">
+        less <i class="l0"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i> more
+      </span>
+    </div>
+    <!-- Shows the language breakdown until a day is hovered, then streams in what happened that day -->
+    <div class="detail" id="gh-detail" data-mode="langs">
+      <div class="langs">
+        <div class="bar">
+          {langs.map((l) => <i data-lang={l.repos.length ? l.name : undefined} style={`flex:${l.pct};background:${LANG_COLOR[l.name] ?? "var(--mute)"}`}></i>)}
+        </div>
+        <div class="legend-l">
+          {langs.map((l) => (
+            <span data-lang={l.repos.length ? l.name : undefined}><i style={`background:${LANG_COLOR[l.name] ?? "var(--mute)"}`}></i>{l.name} <em>{l.pct < 1 ? "<1" : Math.round(l.pct)}%</em></span>
+          ))}
+        </div>
+        <div class="lang-detail" id="gh-lang-detail" aria-live="off"></div>
+      </div>
+      <div class="day" id="gh-day" aria-live="off"></div>
+      <script is:inline type="application/json" id="gh-days" set:html={JSON.stringify(activity?.byDay ?? {})} />
+      <script is:inline type="application/json" id="gh-langs" set:html={JSON.stringify(Object.fromEntries(langs.map((l) => [l.name, l.repos])))} />
+    </div>
+    <div class="stats">
+      <a class="stat go-gh" href={GH}>profile ↗</a>
+    </div>
+  </aside>
+)}
+
+<style is:global>
+  /* Heatmap ramp: pink stepping around the base hsl(313 54.9% 64.3%). Dark (Mocha) runs from a muted plum to a bright pink. */
+  :root {
+    --l0: #e8dfc7;
+    --l1: hsl(313 55% 86%);
+    --l2: hsl(313 55% 75%);
+    --l3: hsl(313 54.9% 64.3%);
+    --l4: hsl(313 58% 48%);
+  }
+  [data-theme="dark"] {
+    --l0: #302a26; --l1: hsl(313 28% 29%); --l2: hsl(313 40% 41%); --l3: hsl(313 54.9% 64.3%); --l4: hsl(313 75% 78%);
+  }
+
+  /* Wider than the shared 320px card: sized by the heatmap (.preview.gh-card beats .preview whatever the style order) */
+  .preview.gh-card { width: max-content; padding-top: 14px; }
+  .detail { padding: 2px 14px 10px; min-height: 7.4rem; font-size: 11px; line-height: 1.55; }
+  .detail[data-mode="langs"] .day, .detail[data-mode="day"] .langs { display: none; }
+  .langs .bar { display: flex; gap: 1px; height: 8px; border-radius: 3px; overflow: hidden; margin: 6px 0 9px; }
+  .langs .bar i { display: block; min-width: 2px; }
+  /* Hovering a language dims the rest and lists its projects below */
+  [data-lang] { cursor: default; transition: opacity 0.15s; }
+  .langs.pick [data-lang]:not(.on) { opacity: 0.3; }
+  .lang-detail { margin-top: 6px; }
+  .lang-detail div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.55em; color: var(--ink); }
+  .lang-detail div::before { content: "› "; color: var(--mute); }
+  .lang-detail div.dim { color: var(--mute); }
+  .lang-detail .g { color: var(--accent); opacity: 0.75; }
+  .legend-l { display: flex; flex-wrap: wrap; gap: 3px 14px; color: var(--ink); }
+  .legend-l span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .legend-l i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .legend-l em { font-style: normal; color: var(--mute); }
+  .day { color: var(--ink); margin-top: 4px; }
+  .day div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.55em; }
+  .day div::before { content: "› "; color: var(--mute); }
+  .day div.dim { color: var(--mute); }
+  /* Not yet decoded characters */
+  .day .g { color: var(--accent); opacity: 0.75; }
+  .months, .heat { display: grid; grid-template-columns: repeat(var(--cols), 9px); gap: 3px; padding: 0 14px; }
+  .months { height: 14px; margin-bottom: 4px; font-size: 10px; color: var(--mute); }
+  .months span { white-space: nowrap; }
+  .heat { grid-template-rows: repeat(7, 9px); grid-auto-flow: column; }
+  .heat i, .legend i { display: block; width: 9px; height: 9px; border-radius: 2px; background: var(--l0); }
+  .heat i.blank { background: none; }
+  .heat i[data-d] { cursor: pointer; transition: opacity 0.15s; }
+  .heat i[data-d]:hover { outline: 1px solid var(--ink); outline-offset: 1px; }
+  .l0 { background: var(--l0) !important; }
+  .l1 { background: var(--l1) !important; }
+  .l2 { background: var(--l2) !important; }
+  .l3 { background: var(--l3) !important; }
+  .l4 { background: var(--l4) !important; }
+  .legend { display: flex; align-items: center; gap: 3px; }
+  .legend i { display: inline-block; }
+  .gh-card .cap { margin-top: 6px; align-items: center; }
+  .stats { display: flex; padding: 0 14px 12px; font-size: 11px; color: var(--mute); }
+  .stat { color: inherit; text-decoration: none; transition: color 0.15s; }
+  a.stat:hover { color: var(--accent); }
+  .go-gh { margin-left: auto; }
+</style>

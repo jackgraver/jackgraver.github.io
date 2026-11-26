@@ -1,0 +1,30 @@
+---
+// The floating project / company preview card. One instance is reused for every [data-name] link:
+// src/scripts/hover-cards.ts fills it from the link's data-* attributes (data-name, data-stack,
+// data-image) and points its href at the link.
+---
+
+<a class="preview" id="preview" tabindex="-1" aria-hidden="true">
+  <div class="shot" id="shot"></div>
+  <div class="cap">
+    <strong id="pv-name"></strong>
+    <span id="pv-stack"></span>
+  </div>
+</a>
+
+<style is:global>
+  /* Shared by every hover card (project preview and GitHub card) */
+  .preview { position: fixed; left: 0; top: 0; width: 320px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 20px 50px -20px var(--shadow); overflow: hidden; pointer-events: none; opacity: 0; scale: 0.94; transition: opacity 0.18s, scale 0.18s; z-index: 10; color: inherit; text-decoration: none; }
+  /* Shown cards can be entered and clicked */
+  .preview.on { opacity: 1; scale: 1; pointer-events: auto; }
+  a.preview { cursor: pointer; }
+  /* Touch: tapped open ("armed"); a second tap on the link or card follows it */
+  @media (hover: none) {
+    .preview.armed { pointer-events: auto; transform-origin: 0 0; }
+  }
+  .cap { padding: 10px 14px; display: flex; justify-content: space-between; gap: 1rem; font-size: 12px; }
+  .cap span { color: var(--mute); }
+
+  .shot { aspect-ratio: 16 / 10; background: var(--line) center / cover; position: relative; }
+  .shot.ph { display: grid; place-items: center; font-family: var(--serif); font-size: 2.2rem; color: var(--mute); background-image: repeating-linear-gradient(135deg, var(--ph1) 0 10px, var(--ph2) 10px 20px); }
+</style>
