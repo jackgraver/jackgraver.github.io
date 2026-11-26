@@ -230,7 +230,7 @@ weeks.forEach((w, i) => {
     margin: 0; width: var(--size); aspect-ratio: 1;
     font: 400 calc(var(--size) / 72) / 1 var(--mono);
     letter-spacing: 0; white-space: pre; overflow: hidden;
-    color: color-mix(in srgb, var(--ink) 17%, transparent);
+    color: color-mix(in srgb, var(--ink) var(--sphere-a, 28%), transparent); /* light theme needs more opacity than dark to read */
   }
   /* The art is cleared around this block (and thins out toward it) by the sphere script */
   .intro { position: relative; z-index: 1; }
@@ -283,6 +283,7 @@ weeks.forEach((w, i) => {
   /* Dark = Mocha. The heatmap ramp runs from a muted plum up to a bright pink. */
   [data-theme="dark"] {
     color-scheme: dark;
+    --sphere-a: 17%;
     --bg: #231f1d; --ink: #f1ead8; --mute: #9a8e82; /* ink = Oat, the light theme's background */ --line: #3b342f; --accent: #d9825b;
     --card: #2c2724; --ph1: #322c28; --ph2: #2b2623; --shadow: rgba(0, 0, 0, 0.6);
     --l0: #302a26; --l1: hsl(313 28% 29%); --l2: hsl(313 40% 41%); --l3: hsl(313 54.9% 64.3%); --l4: hsl(313 75% 78%);
